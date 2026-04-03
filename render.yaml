@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: crowdup-api
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: ALLOWED_ORIGIN
+        sync: false
