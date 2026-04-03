@@ -8,27 +8,32 @@ const CurrencySelectItem = forwardRef<HTMLDivElement, ICurrency>(
         <div ref={ref} {...others}>
             <Group noWrap>
                 <Text size="sm">{name}</Text>
-                <Text size="sm" opacity={0.65}>
-                    {cc}
-                </Text>
+                <Text size="sm" opacity={0.65}>{cc}</Text>
             </Group>
         </div>
     )
 );
 
-const CurrencySelect = () => {
+interface Props {
+    value?: string;
+    onChange?: (value: string | null) => void;
+}
+
+const CurrencySelect = ({value, onChange}: Props) => {
     return (
         <Select
             label="What currency do you want to raise money in?"
             itemComponent={CurrencySelectItem}
-            data={currencyData.data.map(c => ({value: c.name, label: c.name, ...c}))}
+            data={currencyData.data.map(c => ({value: c.cc, label: c.name, ...c}))}
             searchable
             clearable
             maxDropdownHeight={300}
             nothingFound="Nobody here"
-            filter={(value, item) =>
-                item?.name?.toLowerCase().includes(value?.toLowerCase().trim()) ||
-                item?.code?.toLowerCase().includes(value?.toLowerCase().trim())
+            value={value}
+            onChange={onChange}
+            filter={(val, item) =>
+                item?.name?.toLowerCase().includes(val?.toLowerCase().trim()) ||
+                item?.cc?.toLowerCase().includes(val?.toLowerCase().trim())
             }
         />
     );

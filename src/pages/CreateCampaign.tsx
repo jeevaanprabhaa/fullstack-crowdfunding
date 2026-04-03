@@ -58,6 +58,10 @@ import {
 import {CategorySelect, CountrySelect, CurrencySelect, FileDropzone} from "../components";
 import {randomId} from "@mantine/hooks";
 import {useForm} from "@mantine/form";
+import {useNavigate} from "react-router-dom";
+import {notifications} from "@mantine/notifications";
+import {campaignsService} from "../services/campaigns.service";
+import {useAuth} from "../contexts/AuthContext";
 
 interface ISocialProps {
     icon: React.FC<any>;
@@ -76,12 +80,22 @@ const SocialSelectItem = forwardRef<HTMLDivElement, ISocialProps>(
 );
 
 const CreateCampaignPage = () => {
-    const theme = useMantineTheme()
+    const theme = useMantineTheme();
+    const navigate = useNavigate();
+    const {user} = useAuth();
     const [active, setActive] = useState(0);
     const [target, setTarget] = useState('deadline');
     const [deadlineDate, setDeadlineDate] = useState<Date | null>(null);
     const [donationType, setDonationType] = useState('any');
     const [minimumCheck, setMinimumCheck] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState('');
+    const [title, setTitle] = useState('');
+    const [category, setCategory] = useState('');
+    const [country, setCountry] = useState('');
+    const [city, setCity] = useState('');
+    const [currency, setCurrency] = useState('USD');
+    const [goalAmount, setGoalAmount] = useState<number>(0);
     const editor = useEditor({
         extensions: [
             StarterKit,
@@ -103,6 +117,41 @@ const CreateCampaignPage = () => {
 
     const nextStep = () => setActive((current: number) => (current < 4 ? current + 1 : current));
     const prevStep = () => setActive((current: number) => (current > 0 ? current - 1 : current));
+
+    const handleLaunch = async () => {
+        if (!user) {
+            setSubmitError('You must be logged in to create a campaign.');
+            return;
+        }
+        if (!title.trim() || !category || !country || !goalAmount) {
+            setSubmitError('Please fill in the required fields: title, category, country, and goal amount.');
+            return;
+        }
+        setSubmitting(true);
+        setSubmitError('');
+        try {
+            const campaign = await campaignsService.createCampaign({
+                title: title.trim(),
+                description: editor?.getHTML() || '',
+                category,
+                country,
+                city: city || undefined,
+                goal_amount: goalAmount,
+                currency,
+                deadline: deadlineDate ? deadlineDate.toISOString() : undefined,
+            });
+            notifications.show({
+                title: 'Campaign Created!',
+                message: 'Your campaign is now live.',
+                color: 'teal',
+            });
+            navigate(`/campaigns/${campaign.id}`);
+        } catch (err: any) {
+            setSubmitError(err.message || 'Failed to create campaign. Please try again.');
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
     const socialFields = socialForm.values.employees.map((item, index) => (
         <Group key={item.key} mt="xs">
@@ -162,10 +211,21 @@ const CreateCampaignPage = () => {
                             description="Set essential fundraiser details such as fundraiser title, target and currency"
                         >
                             <Title {...titleProps}>Campaign information</Title>
+                            {submitError && (
+                                <Alert color="red" mb="md" icon={<IconInfoCircleFilled size={18}/>}>
+                                    {submitError}
+                                </Alert>
+                            )}
                             <Paper {...paperProps}>
                                 <SimpleGrid cols={2} breakpoints={[{maxWidth: 'sm', cols: 1}]}>
-                                    <TextInput label="Title"/>
-                                    <CategorySelect/>
+                                    <TextInput
+                                        label="Title"
+                                        required
+                                        placeholder="Campaign title"
+                                        value={title}
+                                        onChange={(e) => setTitle(e.target.value)}
+                                    />
+                                    <CategorySelect value={category} onChange={setCategory}/>
                                 </SimpleGrid>
                             </Paper>
                             <Paper {...paperProps}>
@@ -174,14 +234,19 @@ const CreateCampaignPage = () => {
                                     (typically where you&apos;re resident). This helps match you to the correct payment
                                     processors.</Text>
                                 <SimpleGrid cols={2} breakpoints={[{maxWidth: 'sm', cols: 1}]}>
-                                    <CountrySelect/>
-                                    <TextInput label="City" placeholder="city"/>
+                                    <CountrySelect value={country} onChange={setCountry}/>
+                                    <TextInput
+                                        label="City"
+                                        placeholder="city"
+                                        value={city}
+                                        onChange={(e) => setCity(e.target.value)}
+                                    />
                                 </SimpleGrid>
                             </Paper>
                             <Paper {...paperProps}>
                                 <Stack spacing="sm">
                                     <Title {...subTitleProps}>Donation information</Title>
-                                    <CurrencySelect/>
+                                    <CurrencySelect value={currency} onChange={(v) => setCurrency(v || 'USD')}/>
                                     <Radio.Group
                                         label="What kind of fundraiser would you like to create?"
                                         value={target}
@@ -207,6 +272,10 @@ const CreateCampaignPage = () => {
                                                 />
                                                 <NumberInput
                                                     label="Target amount"
+                                                    required
+                                                    min={1}
+                                                    value={goalAmount}
+                                                    onChange={(v) => setGoalAmount(Number(v) || 0)}
                                                     icon={<IconCurrencyDollar size={18}/>}/>
                                                 <Checkbox
                                                     label="Allow your fundraiser to be funded over the needed amount?"/>
@@ -223,6 +292,10 @@ const CreateCampaignPage = () => {
                                                 {minimumCheck &&
                                                     <NumberInput
                                                         label="Target amount"
+                                                        required
+                                                        min={1}
+                                                        value={goalAmount}
+                                                        onChange={(v) => setGoalAmount(Number(v) || 0)}
                                                         icon={<IconCurrencyDollar size={18}/>}
                                                     />}
                                             </Stack>}
@@ -463,8 +536,9 @@ const CreateCampaignPage = () => {
                         </Button>
                         {active < 4 ?
                             <Button onClick={nextStep} leftIcon={<IconChevronRight size={18}/>}>Next step</Button> :
-                            <Button component="a" href="/dashboard" leftIcon={<IconCheck size={18}/>}>Launch
-                                campaign</Button>
+                            <Button onClick={handleLaunch} loading={submitting} leftIcon={<IconCheck size={18}/>}>
+                                Launch campaign
+                            </Button>
                         }
                     </Group>
                 </Container>

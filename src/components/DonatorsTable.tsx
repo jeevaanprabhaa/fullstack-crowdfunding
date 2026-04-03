@@ -1,52 +1,75 @@
-import {useEffect, useState} from "react";
-import campaignsData from "../data/Campaigns.json";
-import {ICampaign} from "../types";
-import {Avatar, Group, Text, Table, Pagination, Container, Flex} from "@mantine/core";
+import {Container, Flex, Group, Pagination, Table, Text, Badge} from "@mantine/core";
+import {useState} from "react";
+import {Donation} from "../services/donations.service";
+
+interface Props {
+    donations?: Donation[];
+}
 
 const PAGE_SIZE = 10;
 
-const DonatorsTable = () => {
+const DonatorsTable = ({donations = []}: Props) => {
     const [page, setPage] = useState(1);
-    const [records, setRecords] = useState<ICampaign[]>(campaignsData.data.slice(0, PAGE_SIZE));
+    const from = (page - 1) * PAGE_SIZE;
+    const records = donations.slice(from, from + PAGE_SIZE);
+    const totalPages = Math.max(1, Math.ceil(donations.length / PAGE_SIZE));
 
-    useEffect(() => {
-        const from = (page - 1) * PAGE_SIZE;
-        const to = from + PAGE_SIZE;
-        setRecords(campaignsData.data.slice(from, to));
-    }, [page]);
+    const statusColor: Record<string, string> = {
+        completed: 'teal',
+        pending: 'yellow',
+        failed: 'red',
+        refunded: 'gray',
+    };
 
-    const rows = records.map((record: ICampaign) => (
-        <tr key={record.title}>
+    const rows = records.map((record) => (
+        <tr key={record.id}>
             <td>
-                <Group spacing="sm">
-                    <Avatar src={record.createdByImage} alt={`${record.createdBy} profile avatar`} size="sm" radius="xl"/>
-                    <Text size="sm">{record.createdBy}</Text>
-                </Group>
+                <Text size="sm">{record.anonymous ? 'Anonymous' : record.donor_name}</Text>
             </td>
-            <td>{record.amountRaised}</td>
-            <td>{record.country}</td>
+            <td>
+                <Text size="sm">{record.campaign?.title || '—'}</Text>
+            </td>
+            <td>${record.amount.toLocaleString()}</td>
+            <td>
+                <Badge color={statusColor[record.status] || 'gray'} variant="light">
+                    {record.status}
+                </Badge>
+            </td>
+            <td>{new Date(record.created_at).toLocaleDateString()}</td>
         </tr>
     ));
 
-    const totalPages = Math.ceil(campaignsData.data.length / PAGE_SIZE);
+    if (donations.length === 0) {
+        return (
+            <Container>
+                <Text color="dimmed" align="center" py="xl">
+                    No donations yet.
+                </Text>
+            </Container>
+        );
+    }
 
     return (
         <Container>
-            <div style={{ overflowX: 'auto' }}>
+            <div style={{overflowX: 'auto'}}>
                 <Table striped highlightOnHover>
                     <thead>
                         <tr>
                             <th>Donor</th>
-                            <th>Amount Raised</th>
-                            <th>Country</th>
+                            <th>Campaign</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                            <th>Date</th>
                         </tr>
                     </thead>
                     <tbody>{rows}</tbody>
                 </Table>
             </div>
-            <Flex justify="center" mt="md">
-                <Pagination value={page} onChange={setPage} total={totalPages} />
-            </Flex>
+            {totalPages > 1 && (
+                <Flex justify="center" mt="md">
+                    <Pagination value={page} onChange={setPage} total={totalPages}/>
+                </Flex>
+            )}
         </Container>
     );
 };

@@ -13,20 +13,13 @@ export interface PaymentIntentResponse {
 
 export const paymentService = {
   async createPaymentIntent(data: PaymentIntentData): Promise<PaymentIntentResponse> {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-    const response = await fetch(
-      `${supabaseUrl}/functions/v1/create-payment-intent`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseAnonKey}`,
-        },
-        body: JSON.stringify(data),
-      }
-    );
+    const response = await fetch('/api/create-payment-intent', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    });
 
     if (!response.ok) {
       const error = await response.json();

@@ -8,19 +8,21 @@ const CountrySelectItem = forwardRef<HTMLDivElement, ICountry>(
         <div ref={ref} {...others}>
             <Group noWrap>
                 <Avatar src={image}/>
-
                 <div>
                     <Text size="sm">{name}</Text>
-                    <Text size="xs" opacity={0.65}>
-                        {code}
-                    </Text>
+                    <Text size="xs" opacity={0.65}>{code}</Text>
                 </div>
             </Group>
         </div>
     )
 );
 
-const CountrySelect = () => {
+interface Props {
+    value?: string;
+    onChange?: (value: string | null) => void;
+}
+
+const CountrySelect = ({value, onChange}: Props) => {
     return (
         <Select
             label="Country"
@@ -30,9 +32,11 @@ const CountrySelect = () => {
             clearable
             maxDropdownHeight={300}
             nothingFound="Nothing found"
-            filter={(value, item) =>
-                item?.name?.toLowerCase().includes(value?.toLowerCase().trim()) ||
-                item?.code?.toLowerCase().includes(value?.toLowerCase().trim())
+            value={value}
+            onChange={onChange}
+            filter={(val, item) =>
+                item?.name?.toLowerCase().includes(val?.toLowerCase().trim()) ||
+                item?.code?.toLowerCase().includes(val?.toLowerCase().trim())
             }
         />
     );

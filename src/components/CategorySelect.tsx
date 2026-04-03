@@ -13,42 +13,15 @@ import {
 } from "@tabler/icons-react";
 
 const mockdata = [
-    {
-        icon: IconClipboardHeart,
-        title: 'Medical',
-    },
-    {
-        icon: IconSos,
-        title: 'Emergency',
-    },
-    {
-        icon: IconLeaf,
-        title: 'Environment',
-    },
-    {
-        icon: IconHeartHandshake,
-        title: 'Nonprofit',
-    },
-    {
-        icon: IconReportMoney,
-        title: 'Financial emergency',
-    },
-    {
-        icon: IconCat,
-        title: 'Animals',
-    },
-    {
-        icon: IconFireHydrant,
-        title: 'Crisis Relief',
-    },
-    {
-        icon: IconAugmentedReality,
-        title: 'Technology',
-    },
-    {
-        icon: IconDeviceTv,
-        title: 'Film & Videos',
-    },
+    {icon: IconClipboardHeart, title: 'Medical'},
+    {icon: IconSos, title: 'Emergency'},
+    {icon: IconLeaf, title: 'Environment'},
+    {icon: IconHeartHandshake, title: 'Nonprofit'},
+    {icon: IconReportMoney, title: 'Financial emergency'},
+    {icon: IconCat, title: 'Animals'},
+    {icon: IconFireHydrant, title: 'Crisis Relief'},
+    {icon: IconAugmentedReality, title: 'Technology'},
+    {icon: IconDeviceTv, title: 'Film & Videos'},
 ];
 
 const CategorySelectItem = forwardRef<HTMLDivElement, any>(
@@ -56,17 +29,18 @@ const CategorySelectItem = forwardRef<HTMLDivElement, any>(
         <div ref={ref} {...others}>
             <Group noWrap>
                 <others.icon size={18}/>
-
-                <div>
-                    <Text size="sm">{title}</Text>
-                </div>
+                <div><Text size="sm">{title}</Text></div>
             </Group>
         </div>
     )
 );
 
+interface Props {
+    value?: string;
+    onChange?: (value: string | null) => void;
+}
 
-const CategorySelect = () => {
+const CategorySelect = ({value, onChange}: Props) => {
     return (
         <Select
             label="Category"
@@ -76,8 +50,10 @@ const CategorySelect = () => {
             clearable
             maxDropdownHeight={300}
             nothingFound="Nothing found"
-            filter={(value, item) =>
-                item?.title?.toLowerCase().includes(value?.toLowerCase().trim())
+            value={value}
+            onChange={onChange}
+            filter={(val, item) =>
+                item?.title?.toLowerCase().includes(val?.toLowerCase().trim())
             }
         />
     );
