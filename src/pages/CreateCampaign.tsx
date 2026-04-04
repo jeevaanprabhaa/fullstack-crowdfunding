@@ -225,7 +225,7 @@ const CreateCampaignPage = () => {
                                         value={title}
                                         onChange={(e) => setTitle(e.target.value)}
                                     />
-                                    <CategorySelect value={category} onChange={setCategory}/>
+                                    <CategorySelect value={category} onChange={(v) => setCategory(v || '')}/>
                                 </SimpleGrid>
                             </Paper>
                             <Paper {...paperProps}>
@@ -234,7 +234,7 @@ const CreateCampaignPage = () => {
                                     (typically where you&apos;re resident). This helps match you to the correct payment
                                     processors.</Text>
                                 <SimpleGrid cols={2} breakpoints={[{maxWidth: 'sm', cols: 1}]}>
-                                    <CountrySelect value={country} onChange={setCountry}/>
+                                    <CountrySelect value={country} onChange={(v) => setCountry(v || '')}/>
                                     <TextInput
                                         label="City"
                                         placeholder="city"

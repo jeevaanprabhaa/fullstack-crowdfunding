@@ -1,4 +1,4 @@
-import {Container, Flex, Group, Pagination, Table, Text, Badge} from "@mantine/core";
+import {Container, Flex, Pagination, Table, Text, Badge} from "@mantine/core";
 import {useState} from "react";
 import {Donation} from "../services/donations.service";
 

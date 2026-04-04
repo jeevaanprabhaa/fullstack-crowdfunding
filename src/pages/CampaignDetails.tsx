@@ -75,7 +75,7 @@ const CampaignDetailsPage = (): JSX.Element => {
             const data = await campaignsService.getCampaignById(id);
             setCampaign(data);
             const stats = await donationsService.getDonationStats(id);
-            setDonorCount(stats.count);
+            setDonorCount(stats.totalDonations);
         } catch (err) {
             console.error('Error fetching campaign:', err);
         } finally {

@@ -1,4 +1,4 @@
-import {Badge, Container, Flex, Group, Pagination, Table, Text} from "@mantine/core";
+import {Badge, Container, Flex, Pagination, Table, Text} from "@mantine/core";
 import {useState} from "react";
 import {Campaign} from "../services/campaigns.service";
 import {Link} from "react-router-dom";
