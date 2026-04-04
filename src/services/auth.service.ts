@@ -27,20 +27,6 @@ export const authService = {
 
     if (authError) throw authError;
 
-    if (authData.user) {
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .upsert({
-          id: authData.user.id,
-          email: authData.user.email!,
-          name,
-        }, { onConflict: 'id', ignoreDuplicates: true });
-
-      if (profileError) {
-        console.warn('Profile insert skipped (trigger will handle it):', profileError.message);
-      }
-    }
-
     return authData;
   },
 
