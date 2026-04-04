@@ -121,6 +121,18 @@ const CampaignDetailsPage = (): JSX.Element => {
         );
     }
 
+    if (!campaign) {
+        return (
+            <Center style={{minHeight: '60vh'}}>
+                <Stack align="center" spacing="sm">
+                    <Text size="xl" weight={600}>Campaign not found</Text>
+                    <Text color="dimmed">This campaign may not exist or you may not have permission to view it.</Text>
+                    <Button component="a" href="/campaigns" variant="light">Browse Campaigns</Button>
+                </Stack>
+            </Center>
+        );
+    }
+
     return (
         <>
             <Helmet>

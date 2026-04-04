@@ -130,7 +130,7 @@ const CreateCampaignPage = () => {
         setSubmitting(true);
         setSubmitError('');
         try {
-            const campaign = await campaignsService.createCampaign({
+            await campaignsService.createCampaign({
                 title: title.trim(),
                 description: editor?.getHTML() || '',
                 category,
@@ -145,7 +145,7 @@ const CreateCampaignPage = () => {
                 message: 'Your campaign is now live.',
                 color: 'teal',
             });
-            navigate(`/campaigns/${campaign.id}`);
+            navigate('/campaigns');
         } catch (err: any) {
             setSubmitError(err.message || 'Failed to create campaign. Please try again.');
         } finally {

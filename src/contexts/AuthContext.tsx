@@ -49,16 +49,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         if (!mounted) return;
+
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
+        // Unblock the UI immediately — we know if user is logged in
+        setLoading(false);
 
+        // Fetch profile in the background without blocking
         if (currentSession?.user) {
-          const profileData = await fetchProfileSafe(currentSession.user.id);
-          if (mounted) setProfile(profileData);
+          fetchProfileSafe(currentSession.user.id).then(profileData => {
+            if (mounted) setProfile(profileData);
+          });
         }
       } catch (error) {
         console.error('Error initializing auth:', error);
-      } finally {
         if (mounted) setLoading(false);
       }
     };
@@ -66,18 +70,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, currentSession) => {
+      (_event, currentSession) => {
         if (!mounted) return;
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
+        setLoading(false);
 
         if (currentSession?.user) {
-          const profileData = await fetchProfileSafe(currentSession.user.id);
-          if (mounted) setProfile(profileData);
+          fetchProfileSafe(currentSession.user.id).then(profileData => {
+            if (mounted) setProfile(profileData);
+          });
         } else {
           setProfile(null);
         }
-        if (mounted) setLoading(false);
       }
     );
 
