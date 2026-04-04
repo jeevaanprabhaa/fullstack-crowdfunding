@@ -23,6 +23,19 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+async function fetchProfileSafe(userId: string): Promise<Profile | null> {
+  try {
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+    return data ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -30,20 +43,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let mounted = true;
+
     const initAuth = async () => {
       try {
         const { data: { session: currentSession } } = await supabase.auth.getSession();
+        if (!mounted) return;
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
 
         if (currentSession?.user) {
-          const profileData = await authService.getProfile(currentSession.user.id);
-          setProfile(profileData);
+          const profileData = await fetchProfileSafe(currentSession.user.id);
+          if (mounted) setProfile(profileData);
         }
       } catch (error) {
         console.error('Error initializing auth:', error);
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     };
 
@@ -51,41 +67,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, currentSession) => {
+        if (!mounted) return;
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
 
         if (currentSession?.user) {
-          try {
-            const profileData = await authService.getProfile(currentSession.user.id);
-            setProfile(profileData);
-          } catch (error) {
-            console.error('Error fetching profile:', error);
-          }
+          const profileData = await fetchProfileSafe(currentSession.user.id);
+          if (mounted) setProfile(profileData);
         } else {
           setProfile(null);
         }
+        if (mounted) setLoading(false);
       }
     );
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
 
   const signUp = async (email: string, password: string, name: string) => {
-    const { user: newUser } = await authService.register({ email, password, name });
-    if (newUser) {
-      const profileData = await authService.getProfile(newUser.id);
-      setProfile(profileData);
-    }
+    await authService.register({ email, password, name });
   };
 
   const signIn = async (email: string, password: string) => {
-    const { user: signedInUser } = await authService.login({ email, password });
-    if (signedInUser) {
-      const profileData = await authService.getProfile(signedInUser.id);
-      setProfile(profileData);
-    }
+    await authService.login({ email, password });
   };
 
   const signOut = async () => {
@@ -98,7 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateProfile = async (updates: { name?: string; avatar_url?: string }) => {
     await authService.updateProfile(updates);
     if (user) {
-      const profileData = await authService.getProfile(user.id);
+      const profileData = await fetchProfileSafe(user.id);
       setProfile(profileData);
     }
   };
