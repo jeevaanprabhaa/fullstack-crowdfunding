@@ -23,12 +23,13 @@ const stripe = process.env.STRIPE_SECRET_KEY
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 
 const allowedOrigins = process.env.ALLOWED_ORIGIN
-  ? process.env.ALLOWED_ORIGIN.split(',').map(o => o.trim())
+  ? process.env.ALLOWED_ORIGIN.split(',').map(o => o.trim().replace(/\/$/, ''))
   : [];
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || !isProduction || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+    const normalizedOrigin = origin ? origin.replace(/\/$/, '') : origin;
+    if (!normalizedOrigin || !isProduction || allowedOrigins.length === 0 || allowedOrigins.includes(normalizedOrigin)) {
       callback(null, true);
     } else {
       callback(new Error(`CORS: origin ${origin} not allowed`));
