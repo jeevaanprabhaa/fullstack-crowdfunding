@@ -9,7 +9,12 @@ const { Pool } = pg;
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const isProduction = process.env.NODE_ENV === 'production';
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: isProduction ? { rejectUnauthorized: false } : false,
+});
 
 const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2023-10-16' })
@@ -17,7 +22,20 @@ const stripe = process.env.STRIPE_SECRET_KEY
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 
-app.use(cors({ origin: true, credentials: true }));
+const allowedOrigins = process.env.ALLOWED_ORIGIN
+  ? process.env.ALLOWED_ORIGIN.split(',').map(o => o.trim())
+  : [];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || !isProduction || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS: origin ${origin} not allowed`));
+    }
+  },
+  credentials: true,
+}));
 app.use(express.json());
 
 function authMiddleware(req, res, next) {

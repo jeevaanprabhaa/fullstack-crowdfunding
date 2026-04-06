@@ -205,17 +205,17 @@ const CreateCampaignPage = () => {
             <Box>
                 <Container my={36}>
                     <Title mb="xl" align="center">Create your campaign</Title>
+                    {submitError && (
+                        <Alert color="red" mb="md" icon={<IconInfoCircleFilled size={18}/>} withCloseButton onClose={() => setSubmitError('')}>
+                            {submitError}
+                        </Alert>
+                    )}
                     <Stepper active={active} onStepClick={setActive} breakpoint="sm">
                         <Stepper.Step
                             label="Get started"
                             description="Set essential fundraiser details such as fundraiser title, target and currency"
                         >
                             <Title {...titleProps}>Campaign information</Title>
-                            {submitError && (
-                                <Alert color="red" mb="md" icon={<IconInfoCircleFilled size={18}/>}>
-                                    {submitError}
-                                </Alert>
-                            )}
                             <Paper {...paperProps}>
                                 <SimpleGrid cols={2} breakpoints={[{maxWidth: 'sm', cols: 1}]}>
                                     <TextInput
