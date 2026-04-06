@@ -6,7 +6,9 @@ CrowdUp is a full-stack crowdfunding platform that allows users to create accoun
 ## Tech Stack
 - **Frontend:** React 18, TypeScript, Vite 4
 - **UI:** Mantine UI v6, Emotion, Tiptap (rich text editor)
-- **Backend/BaaS:** Supabase (PostgreSQL, Auth, Edge Functions)
+- **Backend:** Node.js + Express (server.js) — handles auth, campaigns, donations, and payments
+- **Database:** Replit PostgreSQL (pg driver, schema auto-created on startup)
+- **Auth:** JWT-based authentication (bcryptjs + jsonwebtoken)
 - **Payments:** Stripe
 - **Charts:** ApexCharts
 - **Routing:** React Router v6
@@ -14,29 +16,29 @@ CrowdUp is a full-stack crowdfunding platform that allows users to create accoun
 ## Project Structure
 - `src/` - Frontend React application
   - `components/` - Reusable UI components
-  - `config/` - Supabase client setup
-  - `contexts/` - React Context (Auth)
+  - `contexts/AuthContext.tsx` - JWT auth context (no Supabase)
   - `pages/` - Page-level components
-  - `services/` - Supabase API abstraction layers
+  - `services/` - API service layers (auth, campaigns, donations, payment)
   - `routes/` - Routing configuration
-- `supabase/` - Backend config
-  - `functions/` - Deno Edge Functions (Stripe payment intent)
-  - `migrations/` - PostgreSQL schema, RLS, triggers
+- `server.js` - Express backend: auth routes, campaign routes, donation routes, Stripe
 - `public/` - Static assets
 
+## Architecture
+- The frontend talks to `/api/*` which the Vite dev proxy forwards to `http://localhost:3001`
+- The Express server initializes the database schema on startup
+- Auth tokens are stored in `localStorage` and sent as `Authorization: Bearer <token>`
+
 ## Environment Variables
-Copy `.env.example` to `.env` and fill in:
-- `VITE_SUPABASE_URL` - Supabase project URL
-- `VITE_SUPABASE_ANON_KEY` - Supabase anonymous key
-- `VITE_STRIPE_PUBLISHABLE_KEY` - Stripe publishable key
+- `DATABASE_URL` - PostgreSQL connection string (auto-set by Replit DB)
+- `JWT_SECRET` - Secret for signing JWT tokens (set as env var)
+- `STRIPE_SECRET_KEY` - Stripe secret key (optional; set as secret to enable payments)
+- `VITE_STRIPE_PUBLISHABLE_KEY` - Stripe publishable key (frontend, optional)
 
 ## Development
 ```bash
-npm install --legacy-peer-deps
-npm run dev  # Runs on port 5000
+npm install
+npm run dev  # Runs both Express server (port 3001) and Vite (port 5000)
 ```
 
 ## Deployment
-Configured as a static site:
-- Build: `npm run build`
-- Output: `dist/`
+The app uses `concurrently` to run both servers. For production deployment, consider a server-based deployment target (not static).

@@ -1,4 +1,6 @@
-import { supabase } from '../config/supabase';
+import { getAuthHeaders } from './auth.service';
+
+const API_BASE = '/api';
 
 export interface Campaign {
   id: string;
@@ -36,139 +38,74 @@ export interface CreateCampaignData {
   main_image?: string;
 }
 
+async function apiFetch(url: string, options: RequestInit = {}) {
+  const res = await fetch(url, options);
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Request failed');
+  return json;
+}
+
 export const campaignsService = {
   async getAllCampaigns(): Promise<Campaign[]> {
-    const { data, error } = await supabase
-      .from('campaigns')
-      .select(`
-        *,
-        creator:profiles(id, name, email, avatar_url)
-      `)
-      .eq('status', 'active')
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
+    const json = await apiFetch(`${API_BASE}/campaigns`);
+    return json.data || [];
   },
 
   async getCampaignById(id: string): Promise<Campaign> {
-    const { data, error } = await supabase
-      .from('campaigns')
-      .select(`
-        *,
-        creator:profiles(id, name, email, avatar_url)
-      `)
-      .eq('id', id)
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!data) throw new Error('Campaign not found');
-    return data;
+    const json = await apiFetch(`${API_BASE}/campaigns/${id}`);
+    return json.data;
   },
 
   async getCampaignsByCreator(creatorId: string): Promise<Campaign[]> {
-    const { data, error } = await supabase
-      .from('campaigns')
-      .select(`
-        *,
-        creator:profiles(id, name, email, avatar_url)
-      `)
-      .eq('creator_id', creatorId)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
+    const json = await apiFetch(`${API_BASE}/campaigns/creator/${creatorId}`);
+    return json.data || [];
   },
 
   async createCampaign(campaignData: CreateCampaignData): Promise<Campaign> {
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) throw new Error('User not authenticated');
-
-    const { data, error } = await supabase
-      .from('campaigns')
-      .insert({
-        ...campaignData,
-        creator_id: user.id,
-      })
-      .select(`
-        *,
-        creator:profiles(id, name, email, avatar_url)
-      `)
-      .single();
-
-    if (error) throw error;
-    return data;
+    const json = await apiFetch(`${API_BASE}/campaigns`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify(campaignData),
+    });
+    return json.data;
   },
 
-  async updateCampaign(id: string, updates: Partial<CreateCampaignData>): Promise<Campaign> {
-    const { data, error } = await supabase
-      .from('campaigns')
-      .update(updates)
-      .eq('id', id)
-      .select(`
-        *,
-        creator:profiles(id, name, email, avatar_url)
-      `)
-      .single();
-
-    if (error) throw error;
-    return data;
+  async updateCampaign(id: string, updates: Partial<CreateCampaignData & { status: string }>): Promise<Campaign> {
+    const json = await apiFetch(`${API_BASE}/campaigns/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify(updates),
+    });
+    return json.data;
   },
 
   async deleteCampaign(id: string): Promise<void> {
-    const { error } = await supabase
-      .from('campaigns')
-      .delete()
-      .eq('id', id);
-
-    if (error) throw error;
+    await apiFetch(`${API_BASE}/campaigns/${id}`, {
+      method: 'DELETE',
+      headers: { ...getAuthHeaders() },
+    });
   },
 
   async searchCampaigns(query: string): Promise<Campaign[]> {
-    const { data, error } = await supabase
-      .from('campaigns')
-      .select(`
-        *,
-        creator:profiles(id, name, email, avatar_url)
-      `)
-      .eq('status', 'active')
-      .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
+    const json = await apiFetch(`${API_BASE}/campaigns?search=${encodeURIComponent(query)}`);
+    return json.data || [];
   },
 
   async getCampaignsByCategory(category: string): Promise<Campaign[]> {
-    const { data, error } = await supabase
-      .from('campaigns')
-      .select(`
-        *,
-        creator:profiles(id, name, email, avatar_url)
-      `)
-      .eq('status', 'active')
-      .eq('category', category)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
+    const json = await apiFetch(`${API_BASE}/campaigns?category=${encodeURIComponent(category)}`);
+    return json.data || [];
   },
 
   async uploadCampaignImage(file: File): Promise<string> {
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Math.random()}.${fileExt}`;
-    const filePath = `campaign-images/${fileName}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from('campaigns')
-      .upload(filePath, file);
-
-    if (uploadError) throw uploadError;
-
-    const { data } = supabase.storage
-      .from('campaigns')
-      .getPublicUrl(filePath);
-
-    return data.publicUrl;
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/upload`, {
+      method: 'POST',
+      headers: { ...getAuthHeaders() },
+      body: formData,
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || 'Upload failed');
+    return json.url;
   },
 };

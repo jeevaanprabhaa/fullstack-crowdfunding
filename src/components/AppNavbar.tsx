@@ -28,6 +28,8 @@ import {
 } from '@tabler/icons-react';
 import {useState} from "react";
 import {AppLinks, BrandName, SearchDrawer} from "./index";
+import {useAuth} from "../contexts/AuthContext";
+import {useNavigate} from "react-router-dom";
 
 const useStyles = createStyles((theme) => ({
     header: {
@@ -141,18 +143,14 @@ const useStyles = createStyles((theme) => ({
     }
 }));
 
-const user = {
-    "name": "Jane Spoonfighter",
-    "email": "janspoon@fighter.dev",
-    "image": "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?ixid=MXwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHw%3D&ixlib=rb-1.2.1&auto=format&fit=crop&w=255&q=80"
-}
-
 const ICON_SIZE = 18
 
 type IProps = BoxProps
 
 const AppNavbar = ({...others}: IProps) => {
     const {classes, theme, cx} = useStyles();
+    const {user, signOut} = useAuth();
+    const navigate = useNavigate();
     const [userMenuOpened, setUserMenuOpened] = useState(false);
     const [drawerOpened, {toggle: toggleDrawer, close: closeDrawer}] = useDisclosure(false);
     const [searchOpened, {toggle: toggleSearchDrawer, close: closeSearchDrawer}] = useDisclosure(false);
@@ -210,15 +208,15 @@ const AppNavbar = ({...others}: IProps) => {
                                     >
                                         <Group spacing={7}>
                                             <Avatar
-                                                src={user.image}
-                                                alt={user.name}
+                                                src={user?.avatar_url || undefined}
+                                                alt={user?.name || 'User'}
                                                 radius="xl"
                                                 size={matchesMobile ? 18 : 20}
                                             />
                                             {!matchesMobile &&
                                                 <>
                                                     <Text weight={500} size="sm" sx={{lineHeight: 1}} mr={3}>
-                                                        {user.name}
+                                                        {user?.name || 'Account'}
                                                     </Text>
                                                     <IconChevronDown size={rem(12)} stroke={1.5}/>
                                                 </>}
@@ -257,7 +255,9 @@ const AppNavbar = ({...others}: IProps) => {
                                         Account settings
                                     </Menu.Item>
                                     <Menu.Item
-                                        icon={<IconLogout size="0.9rem" stroke={1.5}/>}>Logout</Menu.Item>
+                                        icon={<IconLogout size="0.9rem" stroke={1.5}/>}
+                                        onClick={async () => { await signOut(); navigate('/login'); }}
+                                    >Logout</Menu.Item>
                                 </Menu.Dropdown>
                             </Menu>
                         </Group>

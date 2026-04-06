@@ -13,12 +13,9 @@ export interface PaymentIntentResponse {
 
 export const paymentService = {
   async createPaymentIntent(data: PaymentIntentData): Promise<PaymentIntentResponse> {
-    const apiBase = import.meta.env.VITE_API_URL || '';
-    const response = await fetch(`${apiBase}/api/create-payment-intent`, {
+    const response = await fetch('/api/create-payment-intent', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
 

@@ -1,4 +1,6 @@
-import { supabase } from '../config/supabase';
+import { getAuthHeaders } from './auth.service';
+
+const API_BASE = '/api';
 
 export interface Donation {
   id: string;
@@ -33,112 +35,63 @@ export interface CreateDonationData {
   donor_email: string;
   anonymous?: boolean;
   message?: string;
+  user_id?: string | null;
+}
+
+async function apiFetch(url: string, options: RequestInit = {}) {
+  const res = await fetch(url, options);
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Request failed');
+  return json;
 }
 
 export const donationsService = {
   async createDonation(donationData: CreateDonationData): Promise<Donation> {
-    const { data: { user } } = await supabase.auth.getUser();
-
-    const { data, error } = await supabase
-      .from('donations')
-      .insert({
-        ...donationData,
-        user_id: user?.id || null,
-        status: 'pending',
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
+    const json = await apiFetch(`${API_BASE}/donations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(donationData),
+    });
+    return json.data;
   },
 
   async updateDonationStatus(
     paymentIntentId: string,
     status: 'completed' | 'failed' | 'refunded'
   ): Promise<Donation> {
-    const { data, error } = await supabase
-      .from('donations')
-      .update({ status })
-      .eq('payment_intent_id', paymentIntentId)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
+    const json = await apiFetch(`${API_BASE}/donations/payment-intent/${paymentIntentId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    return json.data;
   },
 
   async getDonationsByUser(userId: string): Promise<Donation[]> {
-    const { data, error } = await supabase
-      .from('donations')
-      .select(`
-        *,
-        campaign:campaigns(id, title)
-      `)
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
+    const json = await apiFetch(`${API_BASE}/donations/user/${userId}`, {
+      headers: { ...getAuthHeaders() },
+    });
+    return json.data || [];
   },
 
   async getDonationsByCampaign(campaignId: string): Promise<Donation[]> {
-    const { data, error } = await supabase
-      .from('donations')
-      .select(`
-        *,
-        user:profiles(id, name, avatar_url)
-      `)
-      .eq('campaign_id', campaignId)
-      .eq('status', 'completed')
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data || [];
-  },
-
-  async getDonationById(id: string): Promise<Donation> {
-    const { data, error } = await supabase
-      .from('donations')
-      .select(`
-        *,
-        campaign:campaigns(id, title),
-        user:profiles(id, name, avatar_url)
-      `)
-      .eq('id', id)
-      .single();
-
-    if (error) throw error;
-    return data;
+    const json = await apiFetch(`${API_BASE}/donations/campaign/${campaignId}`);
+    return json.data || [];
   },
 
   async getTotalDonationsByUser(userId: string): Promise<number> {
-    const { data, error } = await supabase
-      .from('donations')
-      .select('amount')
-      .eq('user_id', userId)
-      .eq('status', 'completed');
-
-    if (error) throw error;
-
-    return (data || []).reduce((total, donation) => total + Number(donation.amount), 0);
+    const donations = await this.getDonationsByUser(userId);
+    return donations
+      .filter(d => d.status === 'completed')
+      .reduce((total, d) => total + Number(d.amount), 0);
   },
 
   async getDonationStats(campaignId: string) {
-    const { data, error } = await supabase
-      .from('donations')
-      .select('amount, status')
-      .eq('campaign_id', campaignId);
-
-    if (error) throw error;
-
-    const donations = data || [];
-    const completed = donations.filter(d => d.status === 'completed');
-
+    const donations = await this.getDonationsByCampaign(campaignId);
     return {
-      totalDonations: completed.length,
-      totalAmount: completed.reduce((sum, d) => sum + Number(d.amount), 0),
-      pendingDonations: donations.filter(d => d.status === 'pending').length,
+      totalDonations: donations.length,
+      totalAmount: donations.reduce((sum, d) => sum + Number(d.amount), 0),
+      pendingDonations: 0,
     };
   },
 };

@@ -1,4 +1,21 @@
-import { supabase } from '../config/supabase';
+const API_BASE = '/api';
+
+function getToken(): string | null {
+  return localStorage.getItem('auth_token');
+}
+
+function setToken(token: string): void {
+  localStorage.setItem('auth_token', token);
+}
+
+function clearToken(): void {
+  localStorage.removeItem('auth_token');
+}
+
+export function getAuthHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 export interface RegisterData {
   email: string;
@@ -13,81 +30,58 @@ export interface LoginData {
 
 export const authService = {
   async register(data: RegisterData) {
-    const { email, password, name } = data;
-
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          name,
-        },
-      },
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
     });
-
-    if (authError) throw authError;
-
-    return authData;
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || 'Registration failed');
+    setToken(json.token);
+    return json;
   },
 
   async login(data: LoginData) {
-    const { email, password } = data;
-
-    const { data: authData, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
     });
-
-    if (error) throw error;
-
-    return authData;
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || 'Login failed');
+    setToken(json.token);
+    return json;
   },
 
   async logout() {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    clearToken();
   },
 
   async getCurrentUser() {
-    const { data: { user }, error } = await supabase.auth.getUser();
-    if (error) throw error;
-    return user;
-  },
-
-  async getSession() {
-    const { data: { session }, error } = await supabase.auth.getSession();
-    if (error) throw error;
-    return session;
+    const token = getToken();
+    if (!token) return null;
+    const res = await fetch(`${API_BASE}/auth/me`, {
+      headers: { ...getAuthHeaders() },
+    });
+    if (!res.ok) {
+      clearToken();
+      return null;
+    }
+    const json = await res.json();
+    return json.user;
   },
 
   async updateProfile(updates: { name?: string; avatar_url?: string }) {
-    const user = await this.getCurrentUser();
-    if (!user) throw new Error('No user logged in');
-
-    const { error } = await supabase
-      .from('profiles')
-      .update(updates)
-      .eq('id', user.id);
-
-    if (error) throw error;
-  },
-
-  async getProfile(userId: string) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-
-    if (error) throw error;
-    return data;
-  },
-
-  onAuthStateChange(callback: (event: string, session: any) => void) {
-    return supabase.auth.onAuthStateChange((event, session) => {
-      (async () => {
-        callback(event, session);
-      })();
+    const res = await fetch(`${API_BASE}/auth/profile`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify(updates),
     });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || 'Failed to update profile');
+    return json.user;
   },
+
+  getToken,
+  hasToken: () => !!getToken(),
 };

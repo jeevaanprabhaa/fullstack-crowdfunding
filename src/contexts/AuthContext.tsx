@@ -1,19 +1,19 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User, Session } from '@supabase/supabase-js';
 import { authService } from '../services/auth.service';
-import { supabase } from '../config/supabase';
 
-interface Profile {
+export interface User {
   id: string;
   email: string;
   name: string;
   avatar_url: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 interface AuthContextType {
   user: User | null;
-  profile: Profile | null;
-  session: Session | null;
+  profile: User | null;
+  session: { user: User } | null;
   loading: boolean;
   signUp: (email: string, password: string, name: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
@@ -23,103 +23,50 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-async function fetchProfileSafe(userId: string): Promise<Profile | null> {
-  try {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
-    return data ?? null;
-  } catch {
-    return null;
-  }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
-
-    const initAuth = async () => {
-      try {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
-        if (!mounted) return;
-
-        setSession(currentSession);
-        setUser(currentSession?.user ?? null);
-        // Unblock the UI immediately — we know if user is logged in
+    authService.getCurrentUser().then(u => {
+      if (mounted) {
+        setUser(u || null);
         setLoading(false);
-
-        // Fetch profile in the background without blocking
-        if (currentSession?.user) {
-          fetchProfileSafe(currentSession.user.id).then(profileData => {
-            if (mounted) setProfile(profileData);
-          });
-        }
-      } catch (error) {
-        console.error('Error initializing auth:', error);
-        if (mounted) setLoading(false);
       }
-    };
-
-    initAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, currentSession) => {
-        if (!mounted) return;
-        setSession(currentSession);
-        setUser(currentSession?.user ?? null);
-        setLoading(false);
-
-        if (currentSession?.user) {
-          fetchProfileSafe(currentSession.user.id).then(profileData => {
-            if (mounted) setProfile(profileData);
-          });
-        } else {
-          setProfile(null);
-        }
-      }
-    );
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
+    }).catch(() => {
+      if (mounted) setLoading(false);
+    });
+    return () => { mounted = false; };
   }, []);
 
   const signUp = async (email: string, password: string, name: string) => {
-    await authService.register({ email, password, name });
+    const result = await authService.register({ email, password, name });
+    setUser(result.user);
   };
 
   const signIn = async (email: string, password: string) => {
-    await authService.login({ email, password });
+    const result = await authService.login({ email, password });
+    setUser(result.user);
   };
 
   const signOut = async () => {
     await authService.logout();
     setUser(null);
-    setProfile(null);
-    setSession(null);
   };
 
   const updateProfile = async (updates: { name?: string; avatar_url?: string }) => {
-    await authService.updateProfile(updates);
-    if (user) {
-      const profileData = await fetchProfileSafe(user.id);
-      setProfile(profileData);
-    }
+    const updated = await authService.updateProfile(updates);
+    setUser(updated);
   };
+
+  const session = user ? { user } : null;
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        profile,
+        profile: user,
         session,
         loading,
         signUp,
