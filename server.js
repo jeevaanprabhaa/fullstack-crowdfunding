@@ -3,18 +3,12 @@ import cors from 'cors';
 import Stripe from 'stripe';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import pg from 'pg';
+import mongoose from 'mongoose';
 
-const { Pool } = pg;
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 const isProduction = process.env.NODE_ENV === 'production';
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: isProduction ? { rejectUnauthorized: false } : false,
-});
 
 const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2023-10-16' })
@@ -39,6 +33,143 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// ── Mongoose Schemas ─────────────────────────────────────────────────────────
+
+const profileSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  name: { type: String, required: true, trim: true },
+  password_hash: { type: String, required: true },
+  avatar_url: { type: String, default: null },
+}, { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } });
+
+const campaignSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  description: { type: String, required: true },
+  category: { type: String, required: true },
+  country: { type: String, required: true },
+  city: { type: String, default: null },
+  goal_amount: { type: Number, required: true, min: 0.01 },
+  amount_raised: { type: Number, default: 0, min: 0 },
+  currency: { type: String, default: 'USD' },
+  deadline: { type: Date, default: null },
+  main_image: { type: String, default: null },
+  creator_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Profile', required: true },
+  status: { type: String, enum: ['active', 'completed', 'cancelled'], default: 'active' },
+}, { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } });
+
+const donationSchema = new mongoose.Schema({
+  campaign_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Campaign', required: true },
+  user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Profile', default: null },
+  amount: { type: Number, required: true, min: 0.01 },
+  currency: { type: String, default: 'USD' },
+  payment_intent_id: { type: String, required: true, unique: true },
+  status: { type: String, enum: ['pending', 'completed', 'failed', 'refunded'], default: 'pending' },
+  donor_name: { type: String, required: true },
+  donor_email: { type: String, required: true },
+  anonymous: { type: Boolean, default: false },
+  message: { type: String, default: null },
+}, { timestamps: { createdAt: 'created_at', updatedAt: false } });
+
+// Auto-update campaign amount_raised when donation status changes to completed/refunded
+donationSchema.post('findOneAndUpdate', async function(doc) {
+  if (!doc) return;
+  try {
+    if (doc.status === 'completed') {
+      await mongoose.model('Campaign').findByIdAndUpdate(doc.campaign_id, {
+        $inc: { amount_raised: doc.amount }
+      });
+    } else if (doc.status === 'refunded') {
+      const campaign = await mongoose.model('Campaign').findById(doc.campaign_id);
+      if (campaign) {
+        await mongoose.model('Campaign').findByIdAndUpdate(doc.campaign_id, {
+          $set: { amount_raised: Math.max(0, campaign.amount_raised - doc.amount) }
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Error updating campaign amount_raised:', err);
+  }
+});
+
+const Profile = mongoose.model('Profile', profileSchema);
+const Campaign = mongoose.model('Campaign', campaignSchema);
+const Donation = mongoose.model('Donation', donationSchema);
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatProfile(p) {
+  if (!p) return null;
+  const obj = p.toObject ? p.toObject() : p;
+  return {
+    id: obj._id.toString(),
+    email: obj.email,
+    name: obj.name,
+    avatar_url: obj.avatar_url,
+    created_at: obj.created_at,
+    updated_at: obj.updated_at,
+  };
+}
+
+function formatCampaign(c) {
+  if (!c) return null;
+  const obj = c.toObject ? c.toObject() : c;
+  const creator = obj.creator_id && typeof obj.creator_id === 'object' && obj.creator_id.name
+    ? {
+        id: obj.creator_id._id.toString(),
+        name: obj.creator_id.name,
+        email: obj.creator_id.email,
+        avatar_url: obj.creator_id.avatar_url,
+      }
+    : null;
+  return {
+    id: obj._id.toString(),
+    title: obj.title,
+    description: obj.description,
+    category: obj.category,
+    country: obj.country,
+    city: obj.city,
+    goal_amount: obj.goal_amount,
+    amount_raised: obj.amount_raised,
+    currency: obj.currency,
+    deadline: obj.deadline,
+    main_image: obj.main_image,
+    creator_id: obj.creator_id?._id?.toString() || obj.creator_id?.toString(),
+    status: obj.status,
+    created_at: obj.created_at,
+    updated_at: obj.updated_at,
+    creator,
+  };
+}
+
+function formatDonation(d) {
+  if (!d) return null;
+  const obj = d.toObject ? d.toObject() : d;
+  const campaign = obj.campaign_id && typeof obj.campaign_id === 'object' && obj.campaign_id.title
+    ? { id: obj.campaign_id._id.toString(), title: obj.campaign_id.title }
+    : null;
+  const user = obj.user_id && typeof obj.user_id === 'object' && obj.user_id.name
+    ? { id: obj.user_id._id.toString(), name: obj.user_id.name, avatar_url: obj.user_id.avatar_url }
+    : null;
+  return {
+    id: obj._id.toString(),
+    campaign_id: obj.campaign_id?._id?.toString() || obj.campaign_id?.toString(),
+    user_id: obj.user_id?._id?.toString() || obj.user_id?.toString() || null,
+    amount: obj.amount,
+    currency: obj.currency,
+    payment_intent_id: obj.payment_intent_id,
+    status: obj.status,
+    donor_name: obj.donor_name,
+    donor_email: obj.donor_email,
+    anonymous: obj.anonymous,
+    message: obj.message,
+    created_at: obj.created_at,
+    campaign,
+    user,
+  };
+}
+
+// ── Auth Middleware ───────────────────────────────────────────────────────────
+
 function authMiddleware(req, res, next) {
   const authHeader = req.headers['authorization'];
   if (!authHeader) return res.status(401).json({ error: 'No token provided' });
@@ -53,94 +184,23 @@ function authMiddleware(req, res, next) {
   }
 }
 
-async function initDB() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS profiles (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      email TEXT NOT NULL UNIQUE,
-      name TEXT NOT NULL,
-      password_hash TEXT NOT NULL,
-      avatar_url TEXT,
-      created_at TIMESTAMPTZ DEFAULT now(),
-      updated_at TIMESTAMPTZ DEFAULT now()
-    );
-
-    CREATE TABLE IF NOT EXISTS campaigns (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      title TEXT NOT NULL,
-      description TEXT NOT NULL,
-      category TEXT NOT NULL,
-      country TEXT NOT NULL,
-      city TEXT,
-      goal_amount NUMERIC NOT NULL CHECK (goal_amount > 0),
-      amount_raised NUMERIC DEFAULT 0 CHECK (amount_raised >= 0),
-      currency TEXT NOT NULL DEFAULT 'USD',
-      deadline TIMESTAMPTZ,
-      main_image TEXT,
-      creator_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'cancelled')),
-      created_at TIMESTAMPTZ DEFAULT now(),
-      updated_at TIMESTAMPTZ DEFAULT now()
-    );
-
-    CREATE TABLE IF NOT EXISTS donations (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
-      user_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
-      amount NUMERIC NOT NULL CHECK (amount > 0),
-      currency TEXT NOT NULL DEFAULT 'USD',
-      payment_intent_id TEXT UNIQUE NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed', 'refunded')),
-      donor_name TEXT NOT NULL,
-      donor_email TEXT NOT NULL,
-      anonymous BOOLEAN DEFAULT false,
-      message TEXT,
-      created_at TIMESTAMPTZ DEFAULT now()
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_campaigns_creator ON campaigns(creator_id);
-    CREATE INDEX IF NOT EXISTS idx_campaigns_status ON campaigns(status);
-    CREATE INDEX IF NOT EXISTS idx_donations_campaign ON donations(campaign_id);
-    CREATE INDEX IF NOT EXISTS idx_donations_user ON donations(user_id);
-    CREATE INDEX IF NOT EXISTS idx_donations_status ON donations(status);
-
-    CREATE OR REPLACE FUNCTION update_campaign_amount()
-    RETURNS TRIGGER AS $$
-    BEGIN
-      IF NEW.status = 'completed' AND (OLD.status IS NULL OR OLD.status != 'completed') THEN
-        UPDATE campaigns SET amount_raised = amount_raised + NEW.amount, updated_at = now() WHERE id = NEW.campaign_id;
-      ELSIF NEW.status = 'refunded' AND OLD.status = 'completed' THEN
-        UPDATE campaigns SET amount_raised = GREATEST(amount_raised - NEW.amount, 0), updated_at = now() WHERE id = NEW.campaign_id;
-      END IF;
-      RETURN NEW;
-    END;
-    $$ LANGUAGE plpgsql;
-
-    DROP TRIGGER IF EXISTS update_campaign_amount_trigger ON donations;
-    CREATE TRIGGER update_campaign_amount_trigger
-      AFTER INSERT OR UPDATE OF status ON donations
-      FOR EACH ROW EXECUTE FUNCTION update_campaign_amount();
-  `);
-  console.log('Database initialized');
-}
+// ── Routes ────────────────────────────────────────────────────────────────────
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 
+// Auth: Register
 app.post('/api/auth/register', async (req, res) => {
   const { email, password, name } = req.body;
   if (!email || !password || !name) return res.status(400).json({ error: 'Missing required fields' });
   if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
 
   try {
-    const existing = await pool.query('SELECT id FROM profiles WHERE email = $1', [email]);
-    if (existing.rows.length > 0) return res.status(409).json({ error: 'Email already in use' });
+    const existing = await Profile.findOne({ email: email.toLowerCase() });
+    if (existing) return res.status(409).json({ error: 'Email already in use' });
 
-    const passwordHash = await bcrypt.hash(password, 10);
-    const result = await pool.query(
-      'INSERT INTO profiles (email, name, password_hash) VALUES ($1, $2, $3) RETURNING id, email, name, avatar_url, created_at, updated_at',
-      [email, name, passwordHash]
-    );
-    const user = result.rows[0];
+    const password_hash = await bcrypt.hash(password, 10);
+    const profile = await Profile.create({ email, name, password_hash });
+    const user = formatProfile(profile);
     const token = jwt.sign({ id: user.id, email: user.email, name: user.name }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ user, token });
   } catch (err) {
@@ -149,219 +209,241 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
+// Auth: Login
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Missing required fields' });
 
   try {
-    const result = await pool.query('SELECT * FROM profiles WHERE email = $1', [email]);
-    if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid email or password' });
+    const profile = await Profile.findOne({ email: email.toLowerCase() });
+    if (!profile) return res.status(401).json({ error: 'Invalid email or password' });
 
-    const user = result.rows[0];
-    const valid = await bcrypt.compare(password, user.password_hash);
+    const valid = await bcrypt.compare(password, profile.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
 
+    const user = formatProfile(profile);
     const token = jwt.sign({ id: user.id, email: user.email, name: user.name }, JWT_SECRET, { expiresIn: '7d' });
-    const { password_hash, ...safeUser } = user;
-    res.json({ user: safeUser, token });
+    res.json({ user, token });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: err.message || 'Login failed' });
   }
 });
 
+// Auth: Me
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT id, email, name, avatar_url, created_at, updated_at FROM profiles WHERE id = $1',
-      [req.user.id]
-    );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
-    res.json({ user: result.rows[0] });
+    const profile = await Profile.findById(req.user.id);
+    if (!profile) return res.status(404).json({ error: 'User not found' });
+    res.json({ user: formatProfile(profile) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// Auth: Update Profile
 app.put('/api/auth/profile', authMiddleware, async (req, res) => {
   const { name, avatar_url } = req.body;
   try {
-    const result = await pool.query(
-      'UPDATE profiles SET name = COALESCE($1, name), avatar_url = COALESCE($2, avatar_url), updated_at = now() WHERE id = $3 RETURNING id, email, name, avatar_url, created_at, updated_at',
-      [name, avatar_url, req.user.id]
-    );
-    res.json({ user: result.rows[0] });
+    const updates = {};
+    if (name !== undefined) updates.name = name;
+    if (avatar_url !== undefined) updates.avatar_url = avatar_url;
+    const profile = await Profile.findByIdAndUpdate(req.user.id, updates, { new: true });
+    res.json({ user: formatProfile(profile) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-const CAMPAIGN_SELECT = `
-  SELECT c.*, 
-    json_build_object('id', p.id, 'name', p.name, 'email', p.email, 'avatar_url', p.avatar_url) AS creator
-  FROM campaigns c
-  LEFT JOIN profiles p ON p.id = c.creator_id
-`;
-
+// Campaigns: List (with optional filter)
 app.get('/api/campaigns', async (req, res) => {
   const { category, search } = req.query;
   try {
-    let q = CAMPAIGN_SELECT + ` WHERE c.status = 'active'`;
-    const params = [];
-    if (category) { params.push(category); q += ` AND c.category = $${params.length}`; }
-    if (search) { params.push(`%${search}%`); q += ` AND (c.title ILIKE $${params.length} OR c.description ILIKE $${params.length})`; }
-    q += ' ORDER BY c.created_at DESC';
-    const result = await pool.query(q, params);
-    res.json({ data: result.rows });
+    const filter = { status: 'active' };
+    if (category) filter.category = category;
+    if (search) filter.$or = [
+      { title: { $regex: search, $options: 'i' } },
+      { description: { $regex: search, $options: 'i' } },
+    ];
+    const campaigns = await Campaign.find(filter)
+      .populate('creator_id', 'name email avatar_url')
+      .sort({ created_at: -1 });
+    res.json({ data: campaigns.map(formatCampaign) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/campaigns/:id', async (req, res) => {
-  try {
-    const result = await pool.query(CAMPAIGN_SELECT + ' WHERE c.id = $1', [req.params.id]);
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Campaign not found' });
-    res.json({ data: result.rows[0] });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
+// Campaigns: Get by creator — must come BEFORE /:id
 app.get('/api/campaigns/creator/:creatorId', async (req, res) => {
   try {
-    const result = await pool.query(
-      CAMPAIGN_SELECT + ' WHERE c.creator_id = $1 ORDER BY c.created_at DESC',
-      [req.params.creatorId]
-    );
-    res.json({ data: result.rows });
+    const campaigns = await Campaign.find({ creator_id: req.params.creatorId })
+      .populate('creator_id', 'name email avatar_url')
+      .sort({ created_at: -1 });
+    res.json({ data: campaigns.map(formatCampaign) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// Campaigns: Get by ID
+app.get('/api/campaigns/:id', async (req, res) => {
+  try {
+    const campaign = await Campaign.findById(req.params.id)
+      .populate('creator_id', 'name email avatar_url');
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+    res.json({ data: formatCampaign(campaign) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Campaigns: Create
 app.post('/api/campaigns', authMiddleware, async (req, res) => {
   const { title, description, category, country, city, goal_amount, currency, deadline, main_image } = req.body;
   if (!title || !description || !category || !country || !goal_amount) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
   try {
-    const result = await pool.query(
-      `INSERT INTO campaigns (title, description, category, country, city, goal_amount, currency, deadline, main_image, creator_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       RETURNING *`,
-      [title, description, category, country, city || null, goal_amount, currency || 'USD', deadline || null, main_image || null, req.user.id]
-    );
-    const campaign = result.rows[0];
-    const full = await pool.query(CAMPAIGN_SELECT + ' WHERE c.id = $1', [campaign.id]);
-    res.status(201).json({ data: full.rows[0] });
+    const campaign = await Campaign.create({
+      title, description, category, country,
+      city: city || null,
+      goal_amount,
+      currency: currency || 'USD',
+      deadline: deadline || null,
+      main_image: main_image || null,
+      creator_id: req.user.id,
+    });
+    const full = await Campaign.findById(campaign._id).populate('creator_id', 'name email avatar_url');
+    res.status(201).json({ data: formatCampaign(full) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// Campaigns: Update
 app.put('/api/campaigns/:id', authMiddleware, async (req, res) => {
   const { title, description, category, country, city, goal_amount, currency, deadline, main_image, status } = req.body;
   try {
-    const existing = await pool.query('SELECT * FROM campaigns WHERE id = $1', [req.params.id]);
-    if (existing.rows.length === 0) return res.status(404).json({ error: 'Campaign not found' });
-    if (existing.rows[0].creator_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+    const existing = await Campaign.findById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Campaign not found' });
+    if (existing.creator_id.toString() !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
 
-    await pool.query(
-      `UPDATE campaigns SET
-        title = COALESCE($1, title),
-        description = COALESCE($2, description),
-        category = COALESCE($3, category),
-        country = COALESCE($4, country),
-        city = COALESCE($5, city),
-        goal_amount = COALESCE($6, goal_amount),
-        currency = COALESCE($7, currency),
-        deadline = COALESCE($8, deadline),
-        main_image = COALESCE($9, main_image),
-        status = COALESCE($10, status),
-        updated_at = now()
-       WHERE id = $11`,
-      [title, description, category, country, city, goal_amount, currency, deadline, main_image, status, req.params.id]
-    );
-    const full = await pool.query(CAMPAIGN_SELECT + ' WHERE c.id = $1', [req.params.id]);
-    res.json({ data: full.rows[0] });
+    const updates = {};
+    if (title !== undefined) updates.title = title;
+    if (description !== undefined) updates.description = description;
+    if (category !== undefined) updates.category = category;
+    if (country !== undefined) updates.country = country;
+    if (city !== undefined) updates.city = city;
+    if (goal_amount !== undefined) updates.goal_amount = goal_amount;
+    if (currency !== undefined) updates.currency = currency;
+    if (deadline !== undefined) updates.deadline = deadline;
+    if (main_image !== undefined) updates.main_image = main_image;
+    if (status !== undefined) updates.status = status;
+
+    const campaign = await Campaign.findByIdAndUpdate(req.params.id, updates, { new: true })
+      .populate('creator_id', 'name email avatar_url');
+    res.json({ data: formatCampaign(campaign) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// Campaigns: Delete
 app.delete('/api/campaigns/:id', authMiddleware, async (req, res) => {
   try {
-    const existing = await pool.query('SELECT creator_id FROM campaigns WHERE id = $1', [req.params.id]);
-    if (existing.rows.length === 0) return res.status(404).json({ error: 'Campaign not found' });
-    if (existing.rows[0].creator_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
-    await pool.query('DELETE FROM campaigns WHERE id = $1', [req.params.id]);
+    const existing = await Campaign.findById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Campaign not found' });
+    if (existing.creator_id.toString() !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+    await Campaign.findByIdAndDelete(req.params.id);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// Donations: Create
 app.post('/api/donations', async (req, res) => {
   const { campaign_id, amount, currency, payment_intent_id, donor_name, donor_email, anonymous, message, user_id } = req.body;
   if (!campaign_id || !amount || !currency || !payment_intent_id || !donor_name || !donor_email) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
   try {
-    const result = await pool.query(
-      `INSERT INTO donations (campaign_id, user_id, amount, currency, payment_intent_id, donor_name, donor_email, anonymous, message)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [campaign_id, user_id || null, amount, currency, payment_intent_id, donor_name, donor_email, anonymous || false, message || null]
-    );
-    res.status(201).json({ data: result.rows[0] });
+    const donation = await Donation.create({
+      campaign_id,
+      user_id: user_id || null,
+      amount,
+      currency,
+      payment_intent_id,
+      donor_name,
+      donor_email,
+      anonymous: anonymous || false,
+      message: message || null,
+    });
+    res.status(201).json({ data: formatDonation(donation) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// Donations: Update status by payment intent — must come BEFORE /user/:userId and /campaign/:campaignId
 app.put('/api/donations/payment-intent/:paymentIntentId', async (req, res) => {
   const { status } = req.body;
   try {
-    const result = await pool.query(
-      'UPDATE donations SET status = $1 WHERE payment_intent_id = $2 RETURNING *',
-      [status, req.params.paymentIntentId]
+    const prevDonation = await Donation.findOne({ payment_intent_id: req.params.paymentIntentId });
+    if (!prevDonation) return res.status(404).json({ error: 'Donation not found' });
+
+    const prevStatus = prevDonation.status;
+    const donation = await Donation.findOneAndUpdate(
+      { payment_intent_id: req.params.paymentIntentId },
+      { status },
+      { new: true }
     );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Donation not found' });
-    res.json({ data: result.rows[0] });
+
+    // Update campaign amount_raised manually since post hook needs new status
+    if (status === 'completed' && prevStatus !== 'completed') {
+      await Campaign.findByIdAndUpdate(donation.campaign_id, { $inc: { amount_raised: donation.amount } });
+    } else if (status === 'refunded' && prevStatus === 'completed') {
+      const campaign = await Campaign.findById(donation.campaign_id);
+      if (campaign) {
+        await Campaign.findByIdAndUpdate(donation.campaign_id, {
+          $set: { amount_raised: Math.max(0, campaign.amount_raised - donation.amount) }
+        });
+      }
+    }
+
+    res.json({ data: formatDonation(donation) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// Donations: By user
 app.get('/api/donations/user/:userId', authMiddleware, async (req, res) => {
   if (req.user.id !== req.params.userId) return res.status(403).json({ error: 'Forbidden' });
   try {
-    const result = await pool.query(
-      `SELECT d.*, json_build_object('id', c.id, 'title', c.title) AS campaign
-       FROM donations d LEFT JOIN campaigns c ON c.id = d.campaign_id
-       WHERE d.user_id = $1 ORDER BY d.created_at DESC`,
-      [req.params.userId]
-    );
-    res.json({ data: result.rows });
+    const donations = await Donation.find({ user_id: req.params.userId })
+      .populate('campaign_id', 'title')
+      .sort({ created_at: -1 });
+    res.json({ data: donations.map(formatDonation) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// Donations: By campaign
 app.get('/api/donations/campaign/:campaignId', async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT d.*, json_build_object('id', p.id, 'name', p.name, 'avatar_url', p.avatar_url) AS user
-       FROM donations d LEFT JOIN profiles p ON p.id = d.user_id
-       WHERE d.campaign_id = $1 AND d.status = 'completed' ORDER BY d.created_at DESC`,
-      [req.params.campaignId]
-    );
-    res.json({ data: result.rows });
+    const donations = await Donation.find({ campaign_id: req.params.campaignId, status: 'completed' })
+      .populate('user_id', 'name avatar_url')
+      .sort({ created_at: -1 });
+    res.json({ data: donations.map(formatDonation) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// Stripe: Create Payment Intent
 app.post('/api/create-payment-intent', async (req, res) => {
   if (!stripe) return res.status(503).json({ error: 'Stripe is not configured. Add STRIPE_SECRET_KEY to enable payments.' });
   try {
@@ -383,11 +465,16 @@ app.post('/api/create-payment-intent', async (req, res) => {
   }
 });
 
-initDB().then(() => {
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Backend server running on port ${PORT}`);
+// ── Connect & Start ───────────────────────────────────────────────────────────
+
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => {
+    console.log('Connected to MongoDB');
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Backend server running on port ${PORT}`);
+    });
+  })
+  .catch(err => {
+    console.error('Failed to connect to MongoDB:', err);
+    process.exit(1);
   });
-}).catch(err => {
-  console.error('Failed to initialize database:', err);
-  process.exit(1);
-});
