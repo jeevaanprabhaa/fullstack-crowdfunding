@@ -2,6 +2,7 @@ modules = ["nodejs-20", "web"]
 [agent]
 expertMode = true
 integrations = ["javascript_database:1.0.0"]
+stack = "BEST_EFFORT_FALLBACK"
 
 [nix]
 channel = "stable-25_05"
@@ -50,6 +51,4 @@ publicDir = "dist"
 [userenv]
 
 [userenv.shared]
-VITE_SUPABASE_URL = "https://skxumrmzjqqnwlybhxjt.supabase.co"
-VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNreHVtcm16anFxbndseWJoeGp0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5NjU0OTUsImV4cCI6MjA5MDU0MTQ5NX0.p7HEhHF4JyJ8lC-fo_8Sm3I2_Qo-kE2aLhNrvIgrJso"
 JWT_SECRET = "4c028b08f4d7a4f968a28a751ea6551d1e35c53912f3af4ecad01e2b21afee9df5529c26dd8d34956ee5249b1dd746a315687402eb24147212ea29f2ce9b2788"

@@ -1,13 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Missing Supabase environment variables — add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your environment');
-}
-
-export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'placeholder');
+// Supabase has been removed. This file is kept for compatibility but is unused.
+// The app uses Express + PostgreSQL directly via the backend API.
+export const supabase = null;
 
 export interface Database {
   public: {
